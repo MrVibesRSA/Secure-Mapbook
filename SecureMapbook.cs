@@ -23,7 +23,7 @@ public record ModMetadata : AbstractModMetadata
     public override string? Url { get; init; }
     public override bool? IsBundleMod { get; init; } = true;
     public override string? License { get; init; } = "MIT";
-    public override string ModGuid { get; init; } = "MrVibesRSA-SecureMapbook";
+    public override string ModGuid { get; init; } = "com.mrvibesrsa.securemapbook";
 }
 
 [Injectable(TypePriority = OnLoadOrder.PostDBModLoader + 999)]
