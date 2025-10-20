@@ -16,7 +16,7 @@ public record ModMetadata : AbstractModMetadata
     public override string Name { get; init; } = "SecureMapbook";
     public override string Author { get; init; } = "MrVibesRSA";
     public override List<string>? Contributors { get; init; }
-    public override SemanticVersioning.Version Version { get; init; } = new("1.5.1");
+    public override SemanticVersioning.Version Version { get; init; } = new("1.5.3");
     public override SemanticVersioning.Range SptVersion { get; init; } = new("~4.0.0");
     public override List<string>? Incompatibilities { get; init; }
     public override Dictionary<string, SemanticVersioning.Range>? ModDependencies { get; init; }
@@ -26,7 +26,7 @@ public record ModMetadata : AbstractModMetadata
     public override string ModGuid { get; init; } = "com.mrvibesrsa.securemapbook";
 }
 
-[Injectable(TypePriority = OnLoadOrder.PostDBModLoader + 999)]
+[Injectable(TypePriority = OnLoadOrder.PostDBModLoader + 99999)]
 public class SecureMapbook(
 ISptLogger<SecureMapbook> logger,
 DatabaseService databaseService,
@@ -241,7 +241,7 @@ ModHelper modHelper
             try
             {
                 var slotContainer = databaseService.GetItems()[new MongoId(slotId)];
-                
+
                 if (slotContainer.Properties.Slots == null)
                     continue;
 
@@ -278,16 +278,38 @@ ModHelper modHelper
     {
         try
         {
+            // Disable insurance for the Mapbook itself
             var mapbook = databaseService.GetItems()[new MongoId(config.MapbookItemId)];
             mapbook.Properties ??= new TemplateItemProperties();
             mapbook.Properties.InsuranceDisabled = true;
 
             if (config.EnableDebugging)
                 logger.Info($"[SecureMapbook] Insurance disabled for Mapbook {config.MapbookItemId}");
+
+            // Disable insurance for all maps listed in config.Maps
+            foreach (var kvp in config.Maps)
+            {
+                string mapName = kvp.Key;
+                string mapId = kvp.Value;
+
+                try
+                {
+                    var mapItem = databaseService.GetItems()[new MongoId(mapId)];
+                    mapItem.Properties ??= new TemplateItemProperties();
+                    mapItem.Properties.InsuranceDisabled = true;
+
+                    if (config.EnableDebugging)
+                        logger.Info($"[SecureMapbook] Insurance disabled for map '{mapName}' ({mapId})");
+                }
+                catch (Exception innerEx)
+                {
+                    logger.Error($"[SecureMapbook] Failed to disable insurance for map '{mapName}' ({mapId}): {innerEx}");
+                }
+            }
         }
         catch (Exception ex)
         {
-            logger.Error($"[SecureMapbook] Failed to disable insurance for Mapbook {config.MapbookItemId}: {ex}");
+            logger.Error($"[SecureMapbook] Failed during DisableMapsInsurance process: {ex}");
         }
     }
 }
