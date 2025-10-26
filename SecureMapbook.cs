@@ -1,4 +1,6 @@
-﻿using SPTarkov.DI.Annotations;
+﻿using securemapbooke.Helpers;
+using securemapbooke.Models;
+using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
 using SPTarkov.Server.Core.Helpers;
 using SPTarkov.Server.Core.Models.Common;
@@ -16,7 +18,7 @@ public record ModMetadata : AbstractModMetadata
     public override string Name { get; init; } = "SecureMapbook";
     public override string Author { get; init; } = "MrVibesRSA";
     public override List<string>? Contributors { get; init; }
-    public override SemanticVersioning.Version Version { get; init; } = new("1.5.3");
+    public override SemanticVersioning.Version Version { get; init; } = new("1.5.4");
     public override SemanticVersioning.Range SptVersion { get; init; } = new("~4.0.0");
     public override List<string>? Incompatibilities { get; init; }
     public override Dictionary<string, SemanticVersioning.Range>? ModDependencies { get; init; }
@@ -37,11 +39,11 @@ ModHelper modHelper
 {
     public Task OnLoad()
     {
-        var pathToMod = modHelper.GetAbsolutePathToModFolder(Assembly.GetExecutingAssembly());
-
-        var config = modHelper.GetJsonDataFromFile<ModConfig>(pathToMod, "config.json");
+        var modFolder = modHelper.GetAbsolutePathToModFolder(Assembly.GetExecutingAssembly());
+        var config = ConfigHelper.LoadConfig(modHelper, modFolder);
 
         CreateMapbookItem(customItemService, config);
+        AddMapbookToMaps(config,databaseService);
 
         if (config.AllowInSecureContainers)
             AllowInSecureContainers(config);
@@ -52,7 +54,7 @@ ModHelper modHelper
         if (!config.AllowInsurance)
             DisableMapsInsurance(config);
 
-        logger.Info("Secure Mapbook loaded...");
+        logger.Success("[SecureMapbook] Successfully loaded.");
         return Task.CompletedTask;
     }
 
@@ -70,12 +72,12 @@ ModHelper modHelper
 
         var mapbookDetails = new NewItemFromCloneDetails
         {
-            ItemTplToClone = "5a9d6d00a2750c5c985b5305",
+            ItemTplToClone = config.CloneId,
             NewId = config.MapbookItemId,
-            ParentId = "55818b224bdc2dde698b456f",
+            ParentId = config.ParentId,
             FleaPriceRoubles = config.Price,
             HandbookPriceRoubles = config.Price,
-            HandbookParentId = "5b47574386f77428ca22b2f1",
+            HandbookParentId = config.HandbookParentId,
             Locales = localesForItem,
             OverrideProperties = GetMapbookProperties(config)
         };
@@ -87,7 +89,7 @@ ModHelper modHelper
 
         // Create the item via SPT service
         customItemService.CreateItemFromClone(mapbookDetails);
-        AddToTraderAssort(new MongoId(config.TraderId), new MongoId(config.MapbookItemId), config.Price, new MongoId(), config);
+        AddToTraderAssort(new MongoId(config.TraderId), new MongoId(config.MapbookItemId), config);
     }
 
     private TemplateItemProperties GetMapbookProperties(ModConfig config)
@@ -102,15 +104,16 @@ ModHelper modHelper
             {
                 Path = "assets/content/items/barter/item_mapbook/mapbook.bundle"
             },
-            Width = 1,
-            Height = 2,
+            Width = config.Size.Width,
+            Height = config.Size.Height,
             CanPutIntoDuringTheRaid = true,
             RaidModdable = true,
             InsuranceDisabled = !config.AllowInsurance,
             CanSellOnRagfair = false,
             ItemSound = "item_book",
             Grids = new List<Grid>(),
-            Slots = GenerateMapSlots(config)
+            Slots = GenerateMapSlots(config),
+            ExaminedByDefault = false
         };
     }
 
@@ -129,9 +132,10 @@ ModHelper modHelper
             {
                 Name = $"mod_mount_{(i + 1).ToString().PadLeft(2, '0')}",
                 Id = $"5d235bb686f77443f433127{(char)('b' + i)}",
-                Parent = "55818b224bdc2dde698b456f",
+                Parent = config.ParentId, //"55818b224bdc2dde698b456f"
                 Properties = new SlotProperties
                 {
+                    
                     Filters = new List<SlotFilter>
                     {
                         new SlotFilter
@@ -158,13 +162,57 @@ ModHelper modHelper
         return slots;
     }
 
-    private void AddToTraderAssort(MongoId traderId, MongoId itemId, double price, MongoId assortId, ModConfig config)
+    private void AddToTraderAssort(MongoId traderId, MongoId itemId, ModConfig config)
     {
         var assort = databaseService.GetTrader(traderId).Assort;
 
-        var assortEntry = new Item
+        // --- Level 1: Barter version ---
+        if (config.BarterItems != null && config.BarterItems.Count > 0)
         {
-            Id = assortId,
+            var barterAssortId = new MongoId(); // unique ID for barter entry
+
+            var barterItem = new Item
+            {
+                Id = barterAssortId,
+                Template = itemId,
+                ParentId = "hideout",
+                SlotId = "hideout",
+                Upd = new Upd
+                {
+                    UnlimitedCount = false,
+                    StackObjectsCount = 1,
+                    BuyRestrictionMax = 50,
+                    BuyRestrictionCurrent = 0
+                }
+            };
+
+            assort.Items.Add(barterItem);
+
+            var barterList = new List<BarterScheme>();
+            foreach (var item in config.BarterItems)
+            {
+                barterList.Add(new BarterScheme
+                {
+                    Template = item.ItemId,
+                    Count = item.Count
+                });
+            }
+
+            assort.BarterScheme[barterAssortId] = new List<List<BarterScheme>> { barterList };
+            assort.LoyalLevelItems[barterAssortId] = config.LoyaltyLevelBarter;
+
+            if (config.EnableDebugging)
+            {
+                logger.Info($"[SecureMapbook] Added barter version (Lvl {config.LoyaltyLevelBarter}) of {itemId} to trader {traderId}");
+            }
+        }
+
+        // --- Level 2: Cash purchase version ---
+        var cashAssortId = new MongoId(); // unique ID for cash entry
+
+        var cashItem = new Item
+        {
+            Id = cashAssortId,
             Template = itemId,
             ParentId = "hideout",
             SlotId = "hideout",
@@ -177,21 +225,60 @@ ModHelper modHelper
             }
         };
 
-        var barterScheme = new BarterScheme
+        assort.Items.Add(cashItem);
+
+        var roubleScheme = new List<BarterScheme>
         {
-            Count = price,
-            Template = ItemTpl.MONEY_ROUBLES
+            new BarterScheme
+            {
+                Template = ItemTpl.MONEY_ROUBLES,
+                Count = config.Price
+            }
         };
 
-        assort.Items.Add(assortEntry);
-
-        assort.BarterScheme[assortId] = new List<List<BarterScheme>> { new List<BarterScheme> { barterScheme } };
-
-        assort.LoyalLevelItems[assortId] = 1;
+        assort.BarterScheme[cashAssortId] = new List<List<BarterScheme>> { roubleScheme };
+        assort.LoyalLevelItems[cashAssortId] = config.LoyaltyLevelBuy;
 
         if (config.EnableDebugging)
         {
-            logger.Info($"[SecureMapbook] Added {itemId} to trader {traderId} for {price} roubles");
+            logger.Info($"[SecureMapbook] Added cash version (Lvl {config.LoyaltyLevelBuy}) of {itemId} to trader {traderId} for {config.Price} roubles");
+        }
+    }
+
+    private void AddMapbookToMaps(ModConfig config, DatabaseService databaseService)
+    {
+        // Small spawn probability
+        const float spawnChance = 1f;
+
+        var locations = databaseService.GetLocations();
+
+        foreach (var mapProperty in locations.GetType().GetProperties())
+        {
+            var mapName = mapProperty.Name.ToLower();
+            var mapValue = mapProperty.GetValue(locations);
+
+            if (mapValue == null) continue;
+
+            var staticLootProp = mapValue.GetType().GetProperty("StaticLoot");
+            if (staticLootProp == null) continue;
+
+            var staticLoot = staticLootProp.GetValue(mapValue) as IDictionary<string, dynamic>;
+            if (staticLoot == null) continue;
+
+            foreach (var container in staticLoot.Values)
+            {
+                var itemDistProp = container.GetType().GetProperty("ItemDistribution");
+                if (itemDistProp == null) continue;
+
+                var itemDist = itemDistProp.GetValue(container) as IList<dynamic>;
+                if (itemDist == null) continue;
+
+                itemDist.Add(new
+                {
+                    tpl = config.MapbookItemId,
+                    relativeProbability = spawnChance
+                });
+            }
         }
     }
 
@@ -241,7 +328,7 @@ ModHelper modHelper
             try
             {
                 var slotContainer = databaseService.GetItems()[new MongoId(slotId)];
-
+                
                 if (slotContainer.Properties.Slots == null)
                     continue;
 
@@ -312,29 +399,4 @@ ModHelper modHelper
             logger.Error($"[SecureMapbook] Failed during DisableMapsInsurance process: {ex}");
         }
     }
-}
-
-public class ModConfig
-{
-    public bool EnableDebugging { get; set; }
-    public string MapbookItemId { get; set; } = string.Empty;
-    public string TraderId { get; set; } = string.Empty;
-    public int Price { get; set; }
-    public int LoyaltyLevel { get; set; }
-    public bool AllowInsurance { get; set; }
-    public bool AllowInSecureContainers { get; set; }
-    public bool AllowInSpecialSlots { get; set; }
-    public List<string> SpecialSlotsList { get; set; } = new List<string>();
-    public Dictionary<string, string> SecureContainers { get; set; } = new Dictionary<string, string>();
-    public Dictionary<string, string> OrganizationalPouch { get; set; } = new Dictionary<string, string>();
-    public Dictionary<string, string> Maps { get; set; } = new Dictionary<string, string>();
-    public Dictionary<string, LocaleDetails> Locales { get; set; } = new();
-
-}
-
-public class LocaleDetails
-{
-    public string Name { get; set; } = string.Empty;
-    public string ShortName { get; set; } = string.Empty;
-    public string Description { get; set; } = string.Empty;
 }

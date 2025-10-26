@@ -1,0 +1,14 @@
+{
+  "Locales": {
+    "en": {
+      "Name": "Secure Mapbook",
+      "ShortName": "Mapbook",
+      "Description": "A meticulously crafted book designed for storing and organizing maps..."
+    },
+    "ru": {
+      "Name": "Защищённая карта",
+      "ShortName": "Карта",
+      "Description": "Тщательно созданная книга для хранения и организации карт..."
+    }
+  }
+}

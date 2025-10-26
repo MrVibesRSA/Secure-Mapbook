@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "12Bundle": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:62019;http://localhost:62044"
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "EnableDebugging": false,
+  
+  "CloneId": "5f4f9eb969cdc30ff33f09db",
+  "ParentId": "55818a104bdc2db9688b4569",
+  "HandbookParentId": "5b47574386f77428ca22b345",
+  
+  "MapbookItemId": "6621a2e3a8d8b1a9f0e3b4c5",
+  
+  "TraderId": "54cb50c76803fa8b248b4571",
+  "LoyaltyLevelBuy": 2,
+  "Price": 500000,
+  "LoyaltyLevelBarter": 1,
+
+  "Size": {
+    "Width": 1,
+    "Height": 2
+  },
+
+  "AllowInsurance": false,
+  "AllowInSecureContainers": true,
+  "AllowInSpecialSlots": true,
+
+  "Maps": {
+    "groundZero": "6738033eb7305d3bdafe9518",
+    "streets": "673803448cb3819668d77b1b",
+    "reserve": "6738034a9713b5f42b4a8b78",
+    "labs": "6738034e9d22459ad7cd1b81",
+    "lighthouse": "6738035350b24a4ae4a57997",
+    "factory": "574eb85c245977648157eec3",
+    "woods": "5900b89686f7744e704a8747",
+    "interchange": "5be4038986f774527d3fae60",
+    "shoreline": "5a8036fb86f77407252ddc02",
+    "customs": "5798a2832459774b53341029",
+    "sanatorium": "5a80a29286f7742b25692012",
+    "Labyrinth": "68f1ad32317cc52f4c0b6fae"
+  }
+}
