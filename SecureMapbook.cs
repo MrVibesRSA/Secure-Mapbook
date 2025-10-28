@@ -1,4 +1,5 @@
-﻿using securemapbooke.Helpers;
+﻿using Microsoft.Extensions.Logging;
+using securemapbooke.Helpers;
 using securemapbooke.Models;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
@@ -18,7 +19,7 @@ public record ModMetadata : AbstractModMetadata
     public override string Name { get; init; } = "SecureMapbook";
     public override string Author { get; init; } = "MrVibesRSA";
     public override List<string>? Contributors { get; init; }
-    public override SemanticVersioning.Version Version { get; init; } = new("1.5.4");
+    public override SemanticVersioning.Version Version { get; init; } = new("1.5.5");
     public override SemanticVersioning.Range SptVersion { get; init; } = new("~4.0.0");
     public override List<string>? Incompatibilities { get; init; }
     public override Dictionary<string, SemanticVersioning.Range>? ModDependencies { get; init; }
@@ -45,6 +46,9 @@ ModHelper modHelper
         CreateMapbookItem(customItemService, config);
         AddMapbookToMaps(config,databaseService);
 
+        config.SpecialSlotsList = GetSpecialSlotIds(databaseService, config);
+        config.SecureContainers = GetSecureContainerIds(databaseService, config);
+
         if (config.AllowInSecureContainers)
             AllowInSecureContainers(config);
 
@@ -54,7 +58,7 @@ ModHelper modHelper
         if (!config.AllowInsurance)
             DisableMapsInsurance(config);
 
-        logger.Success("[SecureMapbook] Successfully loaded.");
+        logger.Success(ValidateModChanges(config, databaseService, customItemService)); // validate mod changes
         return Task.CompletedTask;
     }
 
@@ -99,7 +103,7 @@ ModHelper modHelper
             Name = "Secure Mapbook",
             ShortName = "Mapbook",
             Description = "A meticulously crafted book designed for storing and organizing maps...",
-            // Prefab reference
+
             Prefab = new Prefab
             {
                 Path = "assets/content/items/barter/item_mapbook/mapbook.bundle"
@@ -132,7 +136,7 @@ ModHelper modHelper
             {
                 Name = $"mod_mount_{(i + 1).ToString().PadLeft(2, '0')}",
                 Id = $"5d235bb686f77443f433127{(char)('b' + i)}",
-                Parent = config.ParentId, //"55818b224bdc2dde698b456f"
+                Parent = "55818b224bdc2dde698b456f",
                 Properties = new SlotProperties
                 {
                     
@@ -282,10 +286,36 @@ ModHelper modHelper
         }
     }
 
+    public Dictionary<string, string> GetSecureContainerIds(DatabaseService databaseService, ModConfig config)
+    {
+        var result = new Dictionary<string, string>();
+        var allItems = databaseService.GetItems();
+
+        foreach (var kvp in allItems)
+        {
+            var tpl = kvp.Value;
+            if (tpl == null || tpl.Parent == null)
+                continue;
+
+            // Secure containers share the parent template ID below
+            if (string.Equals(tpl.Parent, "5448bf274bdc2dfc2f8b456a", StringComparison.OrdinalIgnoreCase))
+            {
+                // Key = ID, Value = Name (or fallback to "Unknown")
+                var name = tpl.Name ?? "Unknown";
+                if (!result.ContainsKey(kvp.Key))
+                    result.Add(kvp.Key, name);
+
+                if (config.EnableDebugging)
+                    logger.Info($"[SecureMapbook] Found secure container: {name} ({kvp.Key})");
+            }
+        }
+
+        return result;
+    }
+
     private void AllowInSecureContainers(ModConfig config)
     {
-        var containerIds = config.SecureContainers.Values
-            .Concat(config.OrganizationalPouch.Values);
+        var containerIds = config.SecureContainers.Keys.Concat(config.OrganizationalPouch.Keys);
 
         foreach (var containerId in containerIds)
         {
@@ -321,24 +351,53 @@ ModHelper modHelper
         }
     }
 
-    private void AllowInSpecialSlots(ModConfig config)
+    public List<string> GetSpecialSlotIds(DatabaseService databaseService, ModConfig config)
     {
-        foreach (var slotId in config.SpecialSlotsList)
+        var result = new List<string>();
+
+        var allItems = databaseService.GetItems();
+        foreach (var kvp in allItems)
         {
-            try
+            var tpl = kvp.Value;
+            if (tpl?.Properties?.Slots == null)
+                continue;
+
+            foreach (var slot in tpl.Properties.Slots)
             {
-                var slotContainer = databaseService.GetItems()[new MongoId(slotId)];
-                
-                if (slotContainer.Properties.Slots == null)
+                if (slot?.Id == null)
                     continue;
 
-                var slots = slotContainer.Properties.Slots.ToList();
+                if (slot.Name.Contains("SpecialSlot", StringComparison.OrdinalIgnoreCase))
+                {
+                    result.Add(slot.Id);
+                    if (config.EnableDebugging)
+                        logger.Info($"[SecureMapbook] Found Special Slot, {slot.Name} ({slot.Id})");
+                }
+            }
+        }
 
-                foreach (var slot in slots)
+        return result.Distinct().ToList();
+    }
+
+    private void AllowInSpecialSlots(ModConfig config)
+    {
+        var allItems = databaseService.GetItems();
+
+        foreach (var kvp in allItems)
+        {
+            var item = kvp.Value;
+            if (item?.Properties?.Slots == null)
+                continue;
+
+            foreach (var slot in item.Properties.Slots)
+            {
+                if (config.SpecialSlotsList.Contains(slot.Id))
                 {
                     slot.Properties ??= new SlotProperties();
 
+                    // Safely convert Filters to a List
                     var filters = slot.Properties.Filters?.ToList() ?? new List<SlotFilter>();
+
                     if (!filters.Any())
                     {
                         filters.Add(new SlotFilter { Filter = new HashSet<MongoId>() });
@@ -346,17 +405,12 @@ ModHelper modHelper
 
                     filters[0].Filter.Add(new MongoId(config.MapbookItemId));
 
+                    // Assign back as IEnumerable
                     slot.Properties.Filters = filters;
+
+                    if (config.EnableDebugging)
+                        logger.Info($"[SecureMapbook] Added Mapbook to special slot in container {kvp.Key}");
                 }
-
-                slotContainer.Properties.Slots = slots;
-
-                if (config.EnableDebugging)
-                    logger.Info($"[SecureMapbook] Added Mapbook to special slot container {slotId}");
-            }
-            catch (Exception ex)
-            {
-                logger.Error($"[SecureMapbook] Failed to add Mapbook to special slot container {slotId}: {ex}");
             }
         }
     }
@@ -399,4 +453,75 @@ ModHelper modHelper
             logger.Error($"[SecureMapbook] Failed during DisableMapsInsurance process: {ex}");
         }
     }
+
+    private string ValidateModChanges(ModConfig config, DatabaseService databaseService, CustomItemService customItemService)
+    {
+        bool success = true;
+
+        try
+        {
+            // 1. Validate that the mapbook item exists
+            var items = databaseService.GetItems();
+            if (!items.ContainsKey(new MongoId(config.MapbookItemId)))
+            {
+                logger.Error($"[SecureMapbook] Mapbook item {config.MapbookItemId} not found in item database.");
+                success = false;
+            }
+
+            // 2. Validate that the mapbook has the correct number of slots
+            var mapbook = items.GetValueOrDefault(new MongoId(config.MapbookItemId));
+            var slots = mapbook?.Properties?.Slots?.ToList();
+            if (slots == null || slots.Count == 0)
+            {
+                logger.Warning($"[SecureMapbook] Mapbook item has no slots defined.");
+                success = false;
+            }
+
+            // 3. Validate trader assort entries
+            var trader = databaseService.GetTrader(new MongoId(config.TraderId));
+            var foundTraderEntry = trader.Assort.Items.Any(i => i.Template == new MongoId(config.MapbookItemId));
+            if (!foundTraderEntry)
+            {
+                logger.Error($"[SecureMapbook] ❌ Trader {config.TraderId} has no assort entry for the Mapbook.");
+                success = false;
+            }
+
+            // 4. Validate secure container filters
+            foreach (var kvp in config.SecureContainers)
+            {
+                var containerId = kvp.Key;
+                var container = items.GetValueOrDefault(new MongoId(containerId));
+                if (container?.Properties?.Grids == null)
+                    continue;
+
+                bool found = container.Properties.Grids
+                    .Any(g => g.Properties?.Filters?.Any(f => f.Filter.Contains(new MongoId(config.MapbookItemId))) == true);
+
+                if (!found)
+                {
+                    logger.Warning($"[SecureMapbook] Mapbook missing from container filters {kvp.Value} ({containerId})");
+                    success = false;
+                }
+            }
+
+            // 5. Validate insurance state
+            bool insuranceCorrect = mapbook?.Properties?.InsuranceDisabled == !config.AllowInsurance;
+            if (!insuranceCorrect)
+            {
+                logger.Warning($"[SecureMapbook] Insurance state mismatch for Mapbook {config.MapbookItemId}");
+                success = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.Error($"[SecureMapbook] ❌ Validation failed with exception: {ex}");
+            success = false;
+        }
+
+        if (success)
+            return "[SecureMapbook] loaded successfully!";
+        else
+            return "[SecureMapbook] Some mod config changes failed validation.";
+    }
+
 }

@@ -1,20 +1,6 @@
 {
-  "SpecialSlotsList": [
-    "65e080be269cbd5c5005e529",
-    "627a4e6b255f7527fb05a0f6"
-  ],
-  "SecureContainers": {
-    "KAPPA": "5c093ca986f7740a1867ab12",
-    "THETA": "664a55d84a90fc2c8a6305c9",
-    "GAMMA": "5857a8bc2459772bad15db29",
-    "GAMMA_TUE": "665ee77ccf2d642e98220bca",
-    "EPSILON": "59db794186f77448bc595262",
-    "BETA": "5857a8b324597729ab0a0e7d",
-    "ALPHA": "544a11ac4bdc2d470e8b456a",
-    "WAIST_POUCH": "5732ee6a24597719ae0c0281"
-  },
   "OrganizationalPouch": {
-    "SICC_organizational_pouch": "5d235bb686f77443f4331278",
-    "Documents case": "590c60fc86f77412b13fddcf"
+    "5d235bb686f77443f4331278": "SICC_organizational_pouch",
+    "590c60fc86f77412b13fddcf": "Documents case"
   }
 }
